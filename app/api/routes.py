@@ -17,9 +17,6 @@ import os
 
 router = APIRouter(dependencies=[Depends(get_current_project)])
 
-@router.get("/")
-async def root():
-    return {"message": "Welcome to the MinIO File Backend API"}
 
 @router.post("/upload/init", response_model=UploadInitResponse)
 async def init_upload(

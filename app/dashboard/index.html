@@ -166,7 +166,17 @@
                                 <td class="px-6 py-4 text-right text-gray-400 text-sm">
                                     {{ formatDate(project.created_at) }}
                                 </td>
-                                <td class="px-6 py-4 text-right">
+                                <td class="px-6 py-4 text-right flex justify-end gap-2">
+                                    <button @click="syncProject(project)"
+                                        class="text-blue-500 hover:text-blue-700 opacity-0 group-hover:opacity-100 transition-opacity"
+                                        title="Sync with MinIO" :disabled="syncingProjects.has(project._id)">
+                                        <svg class="w-5 h-5" :class="{'animate-spin': syncingProjects.has(project._id)}"
+                                            fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15">
+                                            </path>
+                                        </svg>
+                                    </button>
                                     <button @click="confirmDelete(project)"
                                         class="text-red-500 hover:text-red-700 opacity-0 group-hover:opacity-100 transition-opacity"
                                         title="Delete Project">
@@ -201,14 +211,25 @@
                                 <h3 class="font-semibold text-gray-900 text-lg">{{ project.name }}</h3>
                                 <p class="text-xs text-gray-500 font-mono mt-1">{{ project._id }}</p>
                             </div>
-                            <button @click="confirmDelete(project)" class="text-red-500 hover:text-red-700 p-2"
-                                title="Delete Project">
-                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16">
-                                    </path>
-                                </svg>
-                            </button>
+                            <div class="flex gap-2">
+                                <button @click="syncProject(project)" class="text-blue-500 hover:text-blue-700 p-2"
+                                    title="Sync with MinIO" :disabled="syncingProjects.has(project._id)">
+                                    <svg class="w-5 h-5" :class="{'animate-spin': syncingProjects.has(project._id)}"
+                                        fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15">
+                                        </path>
+                                    </svg>
+                                </button>
+                                <button @click="confirmDelete(project)" class="text-red-500 hover:text-red-700 p-2"
+                                    title="Delete Project">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16">
+                                        </path>
+                                    </svg>
+                                </button>
+                            </div>
                         </div>
 
                         <div class="space-y-2 mb-3">
@@ -376,7 +397,7 @@
     </div>
 
     <script>
-        const { createApp, ref, onMounted } = Vue;
+        const { createApp, ref, onMounted, reactive } = Vue;
 
         createApp({
             setup() {
@@ -548,6 +569,47 @@
                     }
                 };
 
+                const syncingProjects = reactive(new Set());
+
+                const syncProject = async (project) => {
+                    if (syncingProjects.has(project._id)) return;
+                    syncingProjects.add(project._id);
+
+                    try {
+                        const res = await fetch(`${API_URL}/${project._id}/sync`, {
+                            method: 'POST',
+                            headers: {
+                                'X-Admin-Secret': adminSecret.value
+                            }
+                        });
+
+                        if (!res.ok) {
+                            const err = await res.json();
+                            throw new Error(err.detail || 'Failed to sync');
+                        }
+
+                        const data = await res.json();
+                        const stats = data.stats;
+
+                        let msg = `Sync complete: +${stats.added}, -${stats.removed}, ~${stats.updated}`;
+                        if (stats.errors.length > 0) {
+                            msg += ` (${stats.errors.length} errors)`;
+                            console.error('Sync errors:', stats.errors);
+                            // Show first error in toast if available
+                            if (stats.errors[0]) {
+                                showToast(`Error: ${stats.errors[0]}`, 'error');
+                            }
+                        }
+
+                        showToast(msg);
+                        loadProjects();
+                    } catch (e) {
+                        showToast(e.message, 'error');
+                    } finally {
+                        syncingProjects.delete(project._id);
+                    }
+                };
+
                 const formatDate = (dateStr) => {
                     if (!dateStr) return '';
                     return new Date(dateStr).toLocaleDateString(undefined, {
@@ -588,6 +650,8 @@
                     deleteProject,
                     confirmRegenerate,
                     regenerateApiKey,
+                    syncProject,
+                    syncingProjects,
                     formatDate,
                     formatBytes
                 };

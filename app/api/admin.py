@@ -175,3 +175,109 @@ async def regenerate_api_key(
         "project_id": project_id,
         "new_api_key": new_api_key
     }
+
+@router.post("/projects/{project_id}/sync")
+async def sync_project(
+    project_id: str,
+    db = Depends(get_db)
+):
+    """Sync MongoDB state with actual MinIO storage"""
+    from app.services.storage import storage_service
+    from bson import ObjectId
+    from app.models.file import File
+    
+    # Find project
+    try:
+        project_data = await db.projects.find_one({"_id": ObjectId(project_id)})
+    except:
+        raise HTTPException(status_code=400, detail="Invalid project ID")
+    
+    if not project_data:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Get all buckets
+    buckets = await db.buckets.find({"project_id": project_id}).to_list(1000)
+    
+    stats = {
+        "added": 0,
+        "removed": 0,
+        "updated": 0,
+        "errors": []
+    }
+    
+    for bucket in buckets:
+        physical_name = bucket["physical_name"]
+        bucket_name = bucket["name"]
+        
+        try:
+            # Check if bucket exists in MinIO
+            if not storage_service.client.bucket_exists(bucket_name=physical_name):
+                print(f"WARNING: Bucket {physical_name} missing in MinIO. Recreating...")
+                storage_service.client.make_bucket(bucket_name=physical_name)
+                # Set policy to public-read (optional, but good for consistency)
+                import json
+                policy = {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {"AWS": "*"},
+                            "Action": ["s3:GetObject"],
+                            "Resource": [f"arn:aws:s3:::{physical_name}/*"]
+                        }
+                    ]
+                }
+                storage_service.client.set_bucket_policy(bucket_name=physical_name, policy=json.dumps(policy))
+                minio_objects = []
+            else:
+                # Get all objects from MinIO
+                minio_objects = storage_service.client.list_objects(bucket_name=physical_name, recursive=True)
+            
+            minio_map = {obj.object_name: obj for obj in minio_objects}
+            
+            # Get all files from DB
+            db_files = await db.files.find({
+                "project_id": project_id,
+                "bucket_name": bucket_name
+            }).to_list(10000)
+            db_map = {f["object_key"]: f for f in db_files}
+            
+            # 1. Check for missing files (in MinIO but not DB)
+            for obj_key, obj in minio_map.items():
+                if obj_key not in db_map:
+                    # Add to DB
+                    new_file = File(
+                        project_id=project_id,
+                        bucket_name=bucket_name,
+                        object_key=obj_key,
+                        size=obj.size,
+                        content_type="application/octet-stream" # Default, can't easily guess without head
+                    )
+                    await db.files.insert_one(new_file.model_dump(by_alias=True, exclude={"id"}))
+                    stats["added"] += 1
+                else:
+                    # Check if size matches
+                    db_file = db_map[obj_key]
+                    if db_file["size"] != obj.size:
+                        await db.files.update_one(
+                            {"_id": db_file["_id"]},
+                            {"$set": {"size": obj.size}}
+                        )
+                        stats["updated"] += 1
+
+            # 2. Check for orphaned files (in DB but not MinIO)
+            for obj_key, db_file in db_map.items():
+                if obj_key not in minio_map:
+                    await db.files.delete_one({"_id": db_file["_id"]})
+                    stats["removed"] += 1
+                    
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            print(f"ERROR syncing bucket {bucket_name}: {str(e)}")
+            stats["errors"].append(f"Bucket {bucket_name}: {str(e)}")
+            
+    return {
+        "status": "synced",
+        "stats": stats
+    }
