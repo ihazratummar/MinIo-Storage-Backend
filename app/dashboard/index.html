@@ -49,7 +49,11 @@
                 </div>
                 <form @submit.prevent="login" class="space-y-4">
                     <div>
-                        <input type="password" v-model="secretInput" placeholder="Admin Secret"
+                        <!-- Hidden username for password manager support -->
+                        <input type="text" name="username" value="admin" autocomplete="username" style="display:none">
+
+                        <input type="password" name="password" v-model="secretInput" placeholder="Admin Secret"
+                            autocomplete="current-password"
                             class="w-full px-4 py-3 rounded-lg border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
                             autofocus>
                     </div>
