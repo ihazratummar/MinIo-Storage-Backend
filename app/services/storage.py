@@ -10,16 +10,6 @@ class StorageService:
             secret_key=settings.MINIO_SECRET_KEY,
             secure=settings.MINIO_SECURE
         )
-        self.bucket = settings.MINIO_BUCKET
-        self._ensure_bucket_exists()
-
-    def _ensure_bucket_exists(self):
-        try:
-            if not self.client.bucket_exists(bucket_name=self.bucket):
-                self.client.make_bucket(bucket_name=self.bucket)
-                print(f"Bucket '{self.bucket}' created.")
-        except Exception as e:
-            print(f"Error checking/creating bucket: {e}")
 
     def generate_presigned_url(self, bucket_name: str, object_name: str, method: str = "PUT") -> str:
         # method argument is ignored if we use presigned_put_object, 
