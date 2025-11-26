@@ -14,6 +14,10 @@ class Settings(BaseSettings):
 
     PRESIGNED_EXPIRY: int = 3600
     MINIO_SECURE: bool = True
+    
+    REDIS_URL: str = "redis://localhost:6379/0"
+    CLAMAV_HOST: str = "192.168.0.153"
+    CLAMAV_PORT: int = 3310
 
     class Config:
         env_file = ".env"

@@ -74,7 +74,7 @@ pipeline {
             }
         }
 
-        stage('Run New Container') {
+        stage('Run API Container') {
             steps {
                 script {
                     try {
@@ -88,9 +88,9 @@ pipeline {
                             --restart unless-stopped \
                             ${IMAGE}
                         """
-                        echo "✅ Container started"
+                        echo "✅ API Container started"
                     } catch (Throwable e) {
-                        error "❌ Failed to start container: ${e}"
+                        error "❌ Failed to start API container: ${e}"
                     }
                 }
             }
@@ -101,7 +101,7 @@ pipeline {
                 script {
                     try {
                         sh """
-                            sleep 5
+                            sleep 10
                             docker logs --tail 20 ${CONTAINER}
                         """
                         echo "✅ Health check passed"

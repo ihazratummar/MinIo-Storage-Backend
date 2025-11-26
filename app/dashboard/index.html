@@ -171,6 +171,15 @@
                                     {{ formatDate(project.created_at) }}
                                 </td>
                                 <td class="px-6 py-4 text-right flex justify-end gap-2">
+                                    <button @click="viewFiles(project)"
+                                        class="text-gray-500 hover:text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                                        title="View Files">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
+                                            </path>
+                                        </svg>
+                                    </button>
                                     <button @click="syncProject(project)"
                                         class="text-blue-500 hover:text-blue-700 opacity-0 group-hover:opacity-100 transition-opacity"
                                         title="Sync with MinIO" :disabled="syncingProjects.has(project._id)">
@@ -216,6 +225,14 @@
                                 <p class="text-xs text-gray-500 font-mono mt-1">{{ project._id }}</p>
                             </div>
                             <div class="flex gap-2">
+                                <button @click="viewFiles(project)" class="text-gray-500 hover:text-blue-600 p-2"
+                                    title="View Files">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
+                                        </path>
+                                    </svg>
+                                </button>
                                 <button @click="syncProject(project)" class="text-blue-500 hover:text-blue-700 p-2"
                                     title="Sync with MinIO" :disabled="syncingProjects.has(project._id)">
                                     <svg class="w-5 h-5" :class="{'animate-spin': syncingProjects.has(project._id)}"
@@ -282,6 +299,64 @@
                             {{ formatDate(project.created_at) }}
                         </div>
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Files Modal -->
+        <div v-if="showFilesModal"
+            class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-40 p-4"
+            @click.self="showFilesModal = false">
+            <div class="bg-white w-full max-w-4xl h-[80vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+                <div class="p-6 border-b border-gray-100 flex justify-between items-center">
+                    <h2 class="text-xl font-bold text-gray-900">Files: {{ projectToView?.name }}</h2>
+                    <button @click="showFilesModal = false" class="text-gray-400 hover:text-gray-600">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+                <div class="flex-1 overflow-y-auto p-6">
+                    <div v-if="loadingFiles" class="text-center py-12 text-gray-400">Loading files...</div>
+                    <div v-else-if="files.length === 0" class="text-center py-12 text-gray-500">No files found.</div>
+                    <table v-else class="w-full text-left">
+                        <thead>
+                            <tr class="text-xs uppercase text-gray-500 font-semibold border-b border-gray-100">
+                                <th class="pb-3">Filename</th>
+                                <th class="pb-3">Size</th>
+                                <th class="pb-3">Type</th>
+                                <th class="pb-3">Status</th>
+                                <th class="pb-3 text-right">Uploaded</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-50">
+                            <tr v-for="file in files" :key="file._id" class="text-sm">
+                                <td class="py-3 font-medium text-gray-900 truncate max-w-[200px]"
+                                    :title="file.object_key">{{ file.object_key }}</td>
+                                <td class="py-3 text-gray-500">{{ formatBytes(file.size) }}</td>
+                                <td class="py-3 text-gray-500">{{ file.content_type }}</td>
+                                <td class="py-3">
+                                    <span v-if="file.status === 'clean'"
+                                        class="bg-green-100 text-green-700 px-2 py-1 rounded-full text-xs font-medium">Clean</span>
+                                    <span v-else-if="file.status === 'infected'"
+                                        class="bg-red-100 text-red-700 px-2 py-1 rounded-full text-xs font-medium">Infected</span>
+                                    <span v-else-if="file.status === 'optimized'"
+                                        class="bg-blue-100 text-blue-700 px-2 py-1 rounded-full text-xs font-medium">Optimized</span>
+                                    <span v-else-if="file.status === 'transcoded'"
+                                        class="bg-purple-100 text-purple-700 px-2 py-1 rounded-full text-xs font-medium">Transcoded</span>
+                                    <span v-else-if="file.status === 'sanitized'"
+                                        class="bg-teal-100 text-teal-700 px-2 py-1 rounded-full text-xs font-medium">Sanitized</span>
+                                    <span v-else-if="file.status === 'error'"
+                                        class="bg-red-50 text-red-600 px-2 py-1 rounded-full text-xs font-medium">Error</span>
+                                    <span v-else
+                                        class="bg-gray-100 text-gray-600 px-2 py-1 rounded-full text-xs font-medium">{{
+                                        file.status || 'Pending' }}</span>
+                                </td>
+                                <td class="py-3 text-right text-gray-400">{{ formatDate(file.created_at) }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>
@@ -417,6 +492,10 @@
                 const projectToDelete = ref(null);
                 const showRegenerateModal = ref(false);
                 const projectToRegenerate = ref(null);
+                const showFilesModal = ref(false);
+                const projectToView = ref(null);
+                const files = ref([]);
+                const loadingFiles = ref(false);
 
                 const API_URL = '/admin/projects';
 
@@ -428,18 +507,31 @@
                     }, 3000);
                 };
 
+                const SESSION_DURATION = 24 * 60 * 60 * 1000; // 24 hours
+
                 const checkAuth = () => {
                     const stored = localStorage.getItem('admin_secret');
-                    if (stored) {
+                    const storedTs = localStorage.getItem('admin_secret_ts');
+
+                    if (stored && storedTs) {
+                        const now = Date.now();
+                        if (now - parseInt(storedTs) > SESSION_DURATION) {
+                            logout();
+                            showToast('Session expired', 'error');
+                            return;
+                        }
                         adminSecret.value = stored;
                         isAuthenticated.value = true;
                         loadProjects();
+                    } else {
+                        logout(); // Clear partial state if any
                     }
                 };
 
                 const login = () => {
                     if (secretInput.value) {
                         localStorage.setItem('admin_secret', secretInput.value);
+                        localStorage.setItem('admin_secret_ts', Date.now().toString());
                         adminSecret.value = secretInput.value;
                         isAuthenticated.value = true;
                         loadProjects();
@@ -614,6 +706,25 @@
                     }
                 };
 
+                const viewFiles = async (project) => {
+                    projectToView.value = project;
+                    showFilesModal.value = true;
+                    loadingFiles.value = true;
+                    files.value = [];
+
+                    try {
+                        const res = await fetch(`${API_URL}/${project._id}/files`, {
+                            headers: { 'X-Admin-Secret': adminSecret.value }
+                        });
+                        if (!res.ok) throw new Error('Failed to load files');
+                        files.value = await res.json();
+                    } catch (e) {
+                        showToast(e.message, 'error');
+                    } finally {
+                        loadingFiles.value = false;
+                    }
+                };
+
                 const formatDate = (dateStr) => {
                     if (!dateStr) return '';
                     return new Date(dateStr).toLocaleDateString(undefined, {
@@ -656,6 +767,11 @@
                     regenerateApiKey,
                     syncProject,
                     syncingProjects,
+                    viewFiles,
+                    showFilesModal,
+                    projectToView,
+                    files,
+                    loadingFiles,
                     formatDate,
                     formatBytes
                 };

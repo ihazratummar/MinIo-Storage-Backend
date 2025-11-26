@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from app.schemas.models import (
     UploadInitRequest, UploadInitResponse,
     UploadCompleteRequest, UploadCompleteResponse,
@@ -14,6 +14,7 @@ from app.core.config import settings
 import uuid
 from datetime import datetime, timedelta
 import os
+from app.worker import scan_file, optimize_image, transcode_video, sanitize_document
 
 router = APIRouter(dependencies=[Depends(get_current_project)])
 
@@ -68,6 +69,7 @@ async def init_upload(
 @router.post("/upload/complete", response_model=UploadCompleteResponse)
 async def complete_upload(
     request: UploadCompleteRequest, 
+    background_tasks: BackgroundTasks,
     project: Project = Depends(get_current_project),
     db = Depends(get_db)
 ):
@@ -102,7 +104,27 @@ async def complete_upload(
         size=file_size,
         content_type=request.file_type
     )
-    await db.files.insert_one(new_file.model_dump(by_alias=True, exclude={"id"}))
+    new_file_doc = await db.files.insert_one(new_file.model_dump(by_alias=True, exclude={"id"}))
+    file_id = str(new_file_doc.inserted_id)
+
+    # Trigger Virus Scan (Async)
+    try:
+        background_tasks.add_task(scan_file, bucket_name=db_bucket.physical_name, object_key=request.object_key, file_id=file_id)
+        
+        # Trigger Image Optimization if applicable
+        if request.file_type.startswith("image/"):
+            background_tasks.add_task(optimize_image, bucket_name=db_bucket.physical_name, object_key=request.object_key, file_id=file_id)
+            
+        # Trigger Video Transcoding if applicable
+        elif request.file_type.startswith("video/"):
+            background_tasks.add_task(transcode_video, bucket_name=db_bucket.physical_name, object_key=request.object_key, file_id=file_id)
+            
+        # Trigger Document Sanitization if applicable
+        elif request.file_type == "application/pdf":
+            background_tasks.add_task(sanitize_document, bucket_name=db_bucket.physical_name, object_key=request.object_key, file_id=file_id)
+            
+    except Exception as e:
+        print(f"WARNING: Failed to trigger background tasks: {e}")
 
     final_url = f"https://{settings.MINIO_ENDPOINT}/{db_bucket.physical_name}/{request.object_key}"
 

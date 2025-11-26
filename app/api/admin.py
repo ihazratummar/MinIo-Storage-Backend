@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Header
 from app.core.database import get_db
 from app.models.project import Project, ProjectCreate, ProjectRead
 from app.core.security import verify_admin
+from app.core.config import settings
 import secrets
 
 router = APIRouter(dependencies=[Depends(verify_admin)])
@@ -211,29 +212,28 @@ async def sync_project(
         
         try:
             # Check if bucket exists in MinIO
+            # Check if bucket exists in MinIO
             if not storage_service.client.bucket_exists(bucket_name=physical_name):
-                print(f"WARNING: Bucket {physical_name} missing in MinIO. Recreating...")
-                storage_service.client.make_bucket(bucket_name=physical_name)
-                # Set policy to public-read (optional, but good for consistency)
-                import json
-                policy = {
-                    "Version": "2012-10-17",
-                    "Statement": [
-                        {
-                            "Effect": "Allow",
-                            "Principal": {"AWS": "*"},
-                            "Action": ["s3:GetObject"],
-                            "Resource": [f"arn:aws:s3:::{physical_name}/*"]
-                        }
-                    ]
-                }
-                storage_service.client.set_bucket_policy(bucket_name=physical_name, policy=json.dumps(policy))
-                minio_objects = []
-            else:
-                # Get all objects from MinIO
-                minio_objects = storage_service.client.list_objects(bucket_name=physical_name, recursive=True)
+                print(f"WARNING: Bucket {physical_name} missing in MinIO. Deleting from DB...")
+                await db.buckets.delete_one({"_id": bucket["_id"]})
+                await db.files.delete_many({"bucket_name": bucket_name, "project_id": project_id})
+                stats.setdefault("buckets_deleted", 0)
+                stats["buckets_deleted"] += 1
+                continue
             
-            minio_map = {obj.object_name: obj for obj in minio_objects}
+            # Get all objects from MinIO
+            minio_objects = storage_service.client.list_objects(bucket_name=physical_name, recursive=True)
+            
+            # Filter out generated files (sanitized, optimized, transcoded)
+            minio_map = {}
+            for obj in minio_objects:
+                is_generated = any(obj.object_name.endswith(suffix) for suffix in [
+                    "_sanitized.pdf", 
+                    "_optimized.webp", 
+                    "_transcoded.mp4"
+                ])
+                if not is_generated:
+                    minio_map[obj.object_name] = obj
             
             # Get all files from DB
             db_files = await db.files.find({
@@ -281,3 +281,17 @@ async def sync_project(
         "status": "synced",
         "stats": stats
     }
+
+from app.models.file import File
+
+@router.get("/projects/{project_id}/files", response_model=list[File])
+async def list_project_files(
+    project_id: str,
+    db = Depends(get_db),
+    admin_secret: str = Header(..., alias="X-Admin-Secret")
+):
+    if admin_secret != settings.ADMIN_SECRET:
+        raise HTTPException(status_code=401, detail="Invalid admin secret")
+
+    files = await db.files.find({"project_id": project_id}).sort("created_at", -1).to_list(length=100)
+    return files
