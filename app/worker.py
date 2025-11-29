@@ -104,10 +104,12 @@ async def optimize_image(bucket_name: str, object_key: str, file_id: str):
         output.seek(0)
         
         # Upload optimized version
-        optimized_key = f"{os.path.splitext(object_key)[0]}_optimized.webp"
+        # Upload optimized version (overwrite original)
+        # We keep the original extension (e.g. .jpg) but store WebP content
+        # This ensures the object_key remains consistent for the client
         minio_client.put_object(
             bucket_name=bucket_name,
-            object_name=optimized_key,
+            object_name=object_key,
             data=output,
             length=output.getbuffer().nbytes,
             content_type="image/webp"
@@ -116,10 +118,14 @@ async def optimize_image(bucket_name: str, object_key: str, file_id: str):
         # Update MongoDB
         db.files.update_one(
             {"_id": ObjectId(file_id)},
-            {"$set": {"status": "optimized", "optimized_version": optimized_key}}
+            {"$set": {
+                "status": "optimized", 
+                "content_type": "image/webp",
+                "size": output.getbuffer().nbytes
+            }}
         )
         
-        return {"status": "optimized", "original": object_key, "optimized": optimized_key}
+        return {"status": "optimized", "original": object_key, "new_key": object_key}
 
     except Exception as e:
         print(f"Error optimizing image: {e}")
@@ -218,7 +224,8 @@ async def sanitize_document(bucket_name: str, object_key: str, file_id: str):
         output.seek(0)
         
         # Upload sanitized version
-        sanitized_key = f"{os.path.splitext(object_key)[0]}_sanitized.pdf"
+        # Upload sanitized version (overwrite original)
+        sanitized_key = object_key
         minio_client.put_object(
             bucket_name=bucket_name,
             object_name=sanitized_key,
@@ -230,7 +237,10 @@ async def sanitize_document(bucket_name: str, object_key: str, file_id: str):
         # Update MongoDB
         db.files.update_one(
             {"_id": ObjectId(file_id)},
-            {"$set": {"status": "sanitized", "optimized_version": sanitized_key}}
+            {"$set": {
+                "status": "sanitized", 
+                "size": output.getbuffer().nbytes
+            }}
         )
         
         return {"status": "sanitized", "original": object_key, "sanitized": sanitized_key}

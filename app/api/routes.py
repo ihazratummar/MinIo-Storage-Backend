@@ -112,7 +112,7 @@ async def complete_upload(
         background_tasks.add_task(scan_file, bucket_name=db_bucket.physical_name, object_key=request.object_key, file_id=file_id)
         
         # Trigger Image Optimization if applicable
-        if request.file_type.startswith("image/"):
+        if request.file_type.startswith("image/") and request.optimize:
             background_tasks.add_task(optimize_image, bucket_name=db_bucket.physical_name, object_key=request.object_key, file_id=file_id)
             
         # Trigger Video Transcoding if applicable

@@ -19,6 +19,7 @@ class UploadCompleteRequest(BaseModel):
     file_size: int
     file_type: str
     bucket: str
+    optimize: bool = True
 
 class UploadCompleteResponse(BaseModel):
     object_key: str
