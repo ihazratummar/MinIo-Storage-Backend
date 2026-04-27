@@ -26,7 +26,7 @@ jobs:
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/minio-backend:latest
 
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: build
 
     steps:
