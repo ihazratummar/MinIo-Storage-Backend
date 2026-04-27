@@ -2,70 +2,50 @@ name: Build and Deploy
 
 on:
   push:
-    branches:
-      - main
-
-env:
-  IMAGE: minio-backend:latest
-  CONTAINER: minio-backend
-  STATIC_IP: 172.25.0.7
-  PORT: "7000"
-  NETWORK: custom_bridge
+    branches: [ main ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Pull Code
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name : Build Docker Image
-        run: |
-          docker build -t $IMAGE .
-          echo "✅ Docker image built successfully"
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Stop and Remove Old Container
-        run: |
-          if [ "$(docker ps -aq -f name=^${CONTAINER}$)" ]; then
-            docker stop $CONTAINER || true
-            docker rm $CONTAINER || true
-            echo "✅ Old container removed"
-          else
-            echo "✅ No existing container to remove"
-          fi
-      - name: Verify Environment File
-        run: |
-          ENV_FILE=/home/envs/minio-backend.env
-          if [ ! -f "$ENV_FILE" ]; then
-            echo "❌ Environment file not found at $ENV_FILE"
-            exit 1
-          fi
-          echo "✅ Environment file verified"
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/minio-backend:latest
 
-      - name: Run API Container
+  deploy:
+    runs-on: self-hosted
+    needs: build
+
+    steps:
+      - name: Pull and restart container
         run: |
+          docker pull ${{ secrets.DOCKERHUB_USERNAME }}/minio-backend:latest
+
+          docker stop minio-backend || true
+          docker rm minio-backend || true
+
           docker run -d \
-          --name $CONTAINER \
-          --network $NETWORK \
-          --ip $STATIC_IP \
-          --env-file /home/envs/minio-backend.env \
-          -p $PORT:8000 \
-          --restart unless-stopped \
-          $IMAGE
-          echo "✅ API Container started"
+            --name minio-backend \
+            --network custom_bridge \
+            --ip 172.25.0.7 \
+            --env-file /home/envs/minio-backend.env \
+            -p 7000:8000 \
+            --restart unless-stopped \
+            ${{ secrets.DOCKERHUB_USERNAME }}/minio-backend:latest
 
-      - name: Health Check
-        run: |
-          sleep 10
-          docker logs --tail 20 $CONTAINER
-          echo "✅ Health check passed"
-
-      - name: Cleanup Old Images
-        run: |
-          docker image prune -f || true
-          echo "✅ Cleanup completed"
-
-      - name: On Failure - Print Logs
-        if: failure()
-        run: docker logs $CONTAINER || true
+          sleep 5
+          docker ps | grep minio-backend
+          docker logs --tail 20 minio-backend
