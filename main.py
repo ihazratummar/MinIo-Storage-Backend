@@ -26,6 +26,10 @@ app.mount("/dashboard", StaticFiles(directory="app/dashboard", html=True), name=
 async def root():
     return RedirectResponse(url="/dashboard")
 
+@app.get("/test")
+async def test():
+    return {"test": "test"}
+
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
