@@ -4,7 +4,6 @@ pipeline {
     environment {
         IMAGE = "minio-backend:latest"
         CONTAINER = "minio-backend"
-        NETWORK = "custom_bridge"
         STATIC_IP = "172.25.0.7"
         PORT = "7000"
         ENV_FILE = "/home/envs/minio-backend.env"

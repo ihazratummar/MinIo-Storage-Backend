@@ -1,4 +1,14 @@
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+import os
+import uuid
+from datetime import datetime
+
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+
+from app.core.config import settings
+from app.core.database import get_db
+from app.core.security import get_current_project
+from app.models.file import File
+from app.models.project import Project, Bucket
 from app.schemas.models import (
     UploadInitRequest, UploadInitResponse,
     UploadCompleteRequest, UploadCompleteResponse,
@@ -6,15 +16,7 @@ from app.schemas.models import (
     FileUrlRequest, FileUrlResponse
 )
 from app.services.storage import storage_service
-from app.core.security import get_current_project
-from app.models.project import Project, Bucket
-from app.models.file import File
-from app.core.database import get_db
-from app.core.config import settings
-import uuid
-from datetime import datetime, timedelta
-import os
-from app.worker import scan_file, optimize_image, transcode_video, sanitize_document
+from app.worker import optimize_image, transcode_video, sanitize_document
 
 router = APIRouter(dependencies=[Depends(get_current_project)])
 
@@ -109,7 +111,7 @@ async def complete_upload(
 
     # Trigger Virus Scan (Async)
     try:
-        background_tasks.add_task(scan_file, bucket_name=db_bucket.physical_name, object_key=request.object_key, file_id=file_id)
+        # background_tasks.add_task(scan_file, bucket_name=db_bucket.physical_name, object_key=request.object_key, file_id=file_id)
         
         # Trigger Image Optimization if applicable
         if request.file_type.startswith("image/") and request.optimize:
