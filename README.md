@@ -1,3 +1,5 @@
+[![Build and Deploy](https://github.com/HazratTech/MinIo-Storage-Backend/actions/workflows/deploy.yml/badge.svg)](https://github.com/HazratTech/MinIo-Storage-Backend/actions/workflows/deploy.yml)
+
 # MinIO FastAPI Backend
 
 A production-ready, multi-tenant file storage backend using **FastAPI**, **MongoDB**, and **MinIO**.
